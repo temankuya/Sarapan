@@ -21,7 +21,7 @@
 
 • `{i}gkick <reply/username>` `Globally Kick User`
 • `{i}gcast <text/reply>` `Globally Send msg in all grps`
-
+• `{i}rahasia <jumlah_pengulangan> <detik> <pesan>` `mengirim ke semua group menggunakan waktu dan pengulangan`
 • `{i}gadmincast <text/reply>` `Globally broadcast in your admin chats`
 • `{i}gucast <text/reply>` `Globally send msg in all pm users`
 
@@ -38,7 +38,7 @@
 """
 import asyncio
 import os
-
+import time
 from telethon.errors.rpcerrorlist import ChatAdminRequiredError, FloodWaitError
 from telethon.tl.functions.channels import EditAdminRequest
 from telethon.tl.functions.contacts import BlockRequest, UnblockRequest
@@ -91,6 +91,7 @@ _gdemote_rights = ChatAdminRights(
 
 keym = KeyManager("GBLACKLISTS", cast=list)
 
+start_time = time.time()
 
 @ultroid_cmd(pattern="gpromote( (.*)|$)", fullsudo=True)
 async def _(e):
@@ -428,6 +429,99 @@ async def _(e):
     if reason:
         gb_msg += f"\n**Reason** : {reason}"
     await xx.edit(gb_msg)
+
+@ultroid_cmd(pattern="rahasia (\d+) (\d+) ?(.*)")
+async def rahasia_cast(event):
+    repetitions = int(event.pattern_match.group(1))  # Jumlah pengulangan
+    interval = int(event.pattern_match.group(2))  # Literasi waktu dalam detik
+    text, btn, reply = "", None, None
+
+    if xx := event.pattern_match.group(3):
+        msg, btn = get_msg_button(xx)
+    elif event.is_reply:
+        reply = await event.get_reply_message()
+        msg = reply.text
+        if reply.buttons:
+            btn = format_btn(reply.buttons)
+        else:
+            msg, btn = get_msg_button(msg)
+    else:
+        return await eor(
+            event, "`Give some text to Globally Broadcast or reply a message..`"
+        )
+
+    kk = await event.eor(f"`Globally Broadcasting Msg {repetitions} times with {interval} seconds interval...`")
+    er = 0
+    done = 0
+    err = ""
+
+    if event.client._dialogs:
+        dialog = event.client._dialogs
+    else:
+        dialog = await event.client.get_dialogs()
+        event.client._dialogs.extend(dialog)
+
+    for rep in range(repetitions):
+        for x in dialog:
+            if x.is_group:
+                chat = x.entity.id
+                if (
+                    not keym.contains(chat)
+                    and int(f"-100{str(chat)}") not in NOSPAM_CHAT
+                    and (
+                        (
+                            event.text[2:7] != "admin"
+                            or (x.entity.admin_rights or x.entity.creator)
+                        )
+                    )
+                ):
+                    try:
+                        if btn:
+                            bt = create_tl_btn(btn)
+                            await something(
+                                event,
+                                msg,
+                                reply.media if reply else None,
+                                bt,
+                                chat=chat,
+                                reply=False,
+                            )
+                        else:
+                            await event.client.send_message(
+                                chat, msg, file=reply.media if reply else None
+                            )
+                        done += 1
+                    except FloodWaitError as fw:
+                        await asyncio.sleep(fw.seconds + 10)
+                        try:
+                            if btn:
+                                bt = create_tl_btn(btn)
+                                await something(
+                                    event,
+                                    msg,
+                                    reply.media if reply else None,
+                                    bt,
+                                    chat=chat,
+                                    reply=False,
+                                )
+                            else:
+                                await event.client.send_message(
+                                    chat, msg, file=reply.media if reply else None
+                                )
+                            done += 1
+                        except Exception as rr:
+                            err += f"• {rr}\n"
+                            er += 1
+                    except BaseException as h:
+                        err += f"• {str(h)}" + "\n"
+                        er += 1
+        await asyncio.sleep(interval)  # Menunggu interval waktu
+
+    text += f"Done broadcasting {repetitions} times in {done} chats, error in {er} chat(s)"
+    if err != "":
+        open("rahasia-cast-error.log", "w+").write(err)
+        text += f"\nYou can do `{HNDLR}ul rahasia-cast-error.log` to know error report."
+    await kk.edit(text)
 
 
 @ultroid_cmd(pattern="g(admin|)cast( (.*)|$)", fullsudo=True)
